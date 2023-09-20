@@ -1,0 +1,114 @@
+ apiVersion: v1
+kind: Namespace
+metadata:
+  name: sshd-system
+  namespace: sshd-system
+---
+# Configuration of the keys that can connect to the server.
+# You should add the public keys (usually ~/.ssh/id_rsa.pub) for each user/machine that can use this tunnel.
+# See docs around 'authorized_keys' for how this works.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sshd
+  labels:
+    app: sshd
+  namespace: sshd-system
+data:
+  authorized_keys: |
+    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDE/Ys/mRG1mH6gBpaJbZ73ChGPCY06DERflgx+Gskk2xc0u4KeFS8H0hfKV49kLAVOKX2IY6yJmJwiFkZ+ldYlDzlY0VyQUzRFIml8/TM0Prploe9FNJxm/Qps6nuINoBCgY5vrIV7KXqBVdu06P5yhXqfuTZbdsmrVJh8v+Fo9Ru4giCC6wY+0Rr0rOQd2arqUacFEwsAaoGMpsWi2tCFVeDiigXItWhP5Lgp+Um5H0BiN3BwlKqDORiLTk/6709Lqg7u4CdYBXODvaOgE/yy6HM+q5UeUAI1hu+GGmWmgVFmfq5+UyL93UIxJkTegm5k5r7A5FTQU4rtdJIiU5v1V79CputvrQkyxLKLu04nW6ZBR6cdvUhEMRwLNPRMhoQP3sLBHQoM4YJCeFJFhPJP9IR5O/5sHUdaVUPMoAXsL1OXuEfIDVJJD+lMYUvkK5uGxkg3QuyzvaMhE7mwFLUcXXdLAzCSUhkx2EdiQwTEeCDpw7I7sXUEyaw+NYykMgLvY2UnxsBXS1Cr+M33fwf9h3Dl7zloC2wjzEd7BX3Q3frcFlUnJUjqtc0FlIAbq6jaFjQ6SmsQhMWIjoMs26lM/Y5NTD0b9XI9yPkPPLtZpyE/VZ5r78Qj+kXC/XbNULNqSTgftN8LF313pZOy/KNGB2VlEyvkEC2LGW6C+4/NbQ== tvelmachos@suite5.eu
+---
+# Standard service, can be used for an ingress or similar.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sshd
+  namespace: sshd-system
+spec:
+  ports:
+  - name: ssh
+    port: 2222
+    targetPort: ssh
+  selector:
+    app: sshd
+---
+# The sshd pod itself is run via this StatefulSet.
+# Note that with some additional customization you could run multiple of these for different users.
+# But don't just increase the replicas - that will lead to mismatched server keys across the replicas.
+# The persistent volume is used for preserving randomly server keys that are generated on first launch.
+# If the persistent volume is destroyed then clients will get a warning about mismatched keys when they next connect.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sshd
+  labels:
+    app: sshd
+  namespace: sshd-system
+spec:
+  serviceName: sshd
+  # Just run one instance - if multiple instances run then they will each have different keys.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sshd
+  template:
+    metadata:
+      labels:
+        app: sshd
+    spec:
+      containers:
+      - name: sshd
+        # This image is based on https://github.com/linuxserver/docker-openssh-server
+        # The only modification is the installation of python3, as required by sshuttle.
+        # See docker/Dockerfile.
+        image: linuxserver/openssh-server:version-9.3_p2-r0
+        # This manual command ensures that authorized_keys is synced every time.
+        # Otherwise the base image ignores new keys if the file already exists.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 65532
+          runAsGroup: 65532
+        command:
+        - /bin/sh
+        - -c
+        - rm -f /config/.ssh/authorized_keys && /init
+        # The following envvars configure the openssh daemon. A list of settings can be found here:
+        # https://github.com/linuxserver/docker-openssh-server#parameters
+        env:
+        # OPTIONAL: You may customize the username to use when connecting to this ssh server.
+        #           All users will access the cluster via this username.
+        - name: USER_NAME
+          value: tunnel
+        # Where the configmap data is located. This is copied into /config/.ssh/authorized_keys on pod start.
+        - name: PUBLIC_KEY_FILE
+          value: /keys-ro/authorized_keys
+        # After init, the sshd process will run as nobody:nobody (on port 2222)
+        - name: PUID
+          value: "65534" # uid:nobody
+        - name: PGID
+          value: "65534" # gid:nobody
+        volumeMounts:
+        - name: keys
+          mountPath: /keys-ro
+          readOnly: true
+        - name: data
+          mountPath: /config
+        ports:
+        - name: ssh
+          containerPort: 2222
+        readinessProbe:
+          tcpSocket:
+            port: 2222
+      volumes:
+      - name: keys
+        configMap:
+          name: sshd
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Mi
