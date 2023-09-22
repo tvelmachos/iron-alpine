@@ -9,23 +9,20 @@ RUN echo "https://alpine.global.ssl.fastly.net/alpine/v$(cut -d . -f 1,2 < /etc/
 	&& echo "https://alpine.global.ssl.fastly.net/alpine/v$(cut -d . -f 1,2 < /etc/alpine-release)/community" >> /etc/apk/repositories
 
 # The user the app should run as
-ENV APP_USER=app
+ENV APP_USER=sshuser
 # The home directory
 ENV APP_DIR="/$APP_USER"
 
 RUN apk add --no-cache ca-certificates openssh
 
-COPY entrypoint.sh /app/entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh 
+
+RUN chmod +x /entrypoint.sh 
 
 # Add custom user and setup home directory
-RUN adduser -s /bin/true -u 1001 -D -h $APP_DIR $APP_USER \
+RUN adduser -s /bin/sh -u 1001 -D -h $APP_DIR $APP_USER \
   && chown -R "$APP_USER" "$APP_DIR"\
   && chmod -R 700 "$APP_DIR" 
-
-# Remove all but a handful of admin commands.
-RUN find /sbin /usr/sbin \
-  ! -type d -a ! -name apk -a ! -name ln  ! -name sshd \
-  -delete
 
 # Remove world-writeable permissions except for /tmp/
 RUN find / -xdev -type d -perm +0002 -exec chmod o-w {} + \
@@ -34,10 +31,10 @@ RUN find / -xdev -type d -perm +0002 -exec chmod o-w {} + \
   && chown $APP_USER:root /tmp/
 
 # Remove unnecessary accounts, excluding current app user and root
-RUN sed -i -r "/^($APP_USER|root|nobody)/!d" /etc/group \
+RUN sed -i -r "/^($APP_USER|root|nobody|ssh)/!d" /etc/group \
   && sed -i -r "/^($APP_USER|root|nobody|ssh)/!d" /etc/passwd \
-  && sed -i -r 's#^(.*):[^:]*$#\1:/sbin/nologin#' /etc/passwd \ 
-  && while IFS=: read -r username _; do passwd -l "$username"; done < /etc/passwd || true
+  && sed -i -r 's#^(?!$APP_USER)(.*):[^:]*$#\1:/sbin/nologin#' /etc/passwd \ 
+  && while IFS=: read -r username _; do passwd -l "$username"; done < /etc/passwd || true 
 
 # Remove dangerous commands
 RUN find /bin /etc /lib /sbin /usr -xdev \( \
@@ -63,7 +60,16 @@ RUN find /bin /etc /lib /sbin /usr -xdev -type d \
   -exec chown root:root {} \; \
   -exec chmod 0755 {} \;
 
+# Remove all but a handful of admin commands.
+RUN find /sbin /usr/sbin \
+  ! -type d -a ! -name apk -a ! -name ln  ! -name sshd \
+  -delete
+
+RUN mkdir -p /$APP_DIR/.ssh \
+    && touch /$APP_DIR/.ssh/authorized_keys \
+    && chown -R $APP_USER:$APP_USER /$APP_DIR/.ssh \
+    && chmod -R 0600 /$APP_DIR/.ssh
 # default directory 
 
 WORKDIR $APP_USER 
-CMD  [ "/app/entrypoint.sh" ]
+CMD  [ "/entrypoint.sh" ]
