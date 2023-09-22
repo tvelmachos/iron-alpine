@@ -68,7 +68,8 @@ RUN find /sbin /usr/sbin \
 RUN mkdir -p /$APP_DIR/.ssh \
     && touch /$APP_DIR/.ssh/authorized_keys \
     && chown -R $APP_USER:$APP_USER /$APP_DIR/.ssh \
-    && chmod -R 0600 /$APP_DIR/.ssh
+    && chmod  0700 /$APP_DIR/.ssh \ 
+    &&  chmod  0600 /$APP_DIR/.ssh/authorized_keys
 # default directory 
 
 WORKDIR $APP_USER 
