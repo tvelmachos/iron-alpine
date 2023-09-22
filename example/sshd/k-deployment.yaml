@@ -61,32 +61,13 @@ spec:
         # This image is based on https://github.com/linuxserver/docker-openssh-server
         # The only modification is the installation of python3, as required by sshuttle.
         # See docker/Dockerfile.
-        image: linuxserver/openssh-server:version-9.3_p2-r0
+        image: s5thvelmachos/openssh-server:v220923
         # This manual command ensures that authorized_keys is synced every time.
         # Otherwise the base image ignores new keys if the file already exists.
         securityContext:
           runAsNonRoot: false
-          runAsUser: 65532
-          runAsGroup: 65532
-        command:
-        - /bin/sh
-        - -c
-        - rm -f /config/.ssh/authorized_keys && /init
-        # The following envvars configure the openssh daemon. A list of settings can be found here:
-        # https://github.com/linuxserver/docker-openssh-server#parameters
-        env:
-        # OPTIONAL: You may customize the username to use when connecting to this ssh server.
-        #           All users will access the cluster via this username.
-        - name: USER_NAME
-          value: tunnel
-        # Where the configmap data is located. This is copied into /config/.ssh/authorized_keys on pod start.
-        - name: PUBLIC_KEY_FILE
-          value: /keys-ro/authorized_keys
-        # After init, the sshd process will run as nobody:nobody (on port 2222)
-        - name: PUID
-          value: "65534" # uid:nobody
-        - name: PGID
-          value: "65534" # gid:nobody
+          # runAsUser: 65532
+          # runAsGroup: 65532
         volumeMounts:
         - name: keys
           mountPath: /keys-ro
@@ -95,10 +76,10 @@ spec:
           mountPath: /config
         ports:
         - name: ssh
-          containerPort: 2222
+          containerPort: 22
         readinessProbe:
           tcpSocket:
-            port: 2222
+            port: 22
       volumes:
       - name: keys
         configMap:
