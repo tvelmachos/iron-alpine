@@ -33,7 +33,7 @@ RUN find / -xdev -type d -perm +0002 -exec chmod o-w {} + \
 # Remove unnecessary accounts, excluding current app user and root
 RUN sed -i -r "/^($APP_USER|root|nobody|ssh)/!d" /etc/group \
   && sed -i -r "/^($APP_USER|root|nobody|ssh)/!d" /etc/passwd \
-  && sed -i -r 's#^(?!$APP_USER)(.*):[^:]*$#\1:/sbin/nologin#' /etc/passwd \ 
+  && sed -i -r 's#^(?!$APP_USER|.*):[^:]*$#\1:/sbin/nologin#' /etc/passwd \ 
   && while IFS=: read -r username _; do passwd -l "$username"; done < /etc/passwd || true 
 
 # Remove dangerous commands
